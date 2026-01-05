@@ -408,7 +408,7 @@ class PeftTrainer:
   def _try_get_learning_rate(self) -> float | None:
     """Returns the learning rate from the optimizer state if available."""
     try:
-      return self.optimizer.opt_state.hyperparams["learning_rate"].value
+      return self.optimizer.opt_state.hyperparams["learning_rate"].get_value()
     except AttributeError:
       for chainpart in self.optimizer.opt_state:
         if isinstance(chainpart, optax.EmptyState):
