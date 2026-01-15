@@ -684,16 +684,20 @@ def transfer_state_with_mappings(
   Returns:
     The target state with the transferred values.
   """
-  print("key_mappings:", key_mappings)
-  if key_mapping_hook_fns:
-    print("key_mapping_hook_fns:", key_mapping_hook_fns.keys())
+  # print("key_mappings:", key_mappings)
+  # if key_mapping_hook_fns:
+    # print("key_mapping_hook_fns:", key_mapping_hook_fns.keys())
   # Get flat target state
   tgt_flat_list = dst_state.flat_state()
+<<<<<<< HEAD
 <<<<<<< HEAD
 
 =======
   print("tgt_flat_list:", tgt_flat_list)
 >>>>>>> 13ec32a (hit OOM on train_step)
+=======
+  # print("tgt_flat_list:", tgt_flat_list)
+>>>>>>> ca19be5 (hang repro)
   # Build sharding dictionary if resharding is needed
   sharding_dict = None
 
@@ -709,11 +713,11 @@ def transfer_state_with_mappings(
 
   # Build source-to-target mapping
   src_to_tgt_map = build_flat_dict(tgt_flat_list, key_mappings)
-  print("src_to_tgt_map:", src_to_tgt_map)
+  # print("src_to_tgt_map:", src_to_tgt_map)
 
   # Unroll scanned layers and flatten source state
   unscanned_src_to_tgt_flat = _unroll_scanned_layers(src_state, src_to_tgt_map)
-  print("unscanned_src_to_tgt_flat:", unscanned_src_to_tgt_flat)
+  # print("unscanned_src_to_tgt_flat:", unscanned_src_to_tgt_flat)
 
   # Transfer values with transformations
   for (flat_src_key, tgt_key), (
