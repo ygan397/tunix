@@ -521,60 +521,6 @@ def _apply_transpose(
   return val
 
 
-def _reshape_attention(
-    val: jnp.ndarray, tgt_shape: Tuple[int, ...], src_key: str
-) -> jnp.ndarray:
-  """Reshape attention tensors with special handling.
-
-  Args:
-      val: Value to reshape.
-      tgt_shape: Target shape.
-      src_key: Source key for error messages.
-
-  Returns:
-      Reshaped value.
-
-  Raises:
-      ShapeMismatchError: If reshaping is not possible.
-  """
-  if re.compile(r'layers\..*\.attn\.(q|k|v)_bias').match(src_key):
-    new_shape = (tgt_shape[0], val.shape[0] // tgt_shape[0])
-    logging.debug(
-        'Reshaping attention bias on %s: %s -> %s',
-        src_key,
-        val.shape,
-        new_shape,
-    )
-    return jnp.reshape(val, new_shape)
-  # Handle cases like tgt_shape (4096, 1024) and val shape (4096, 8, 128),
-  # which require reshaping.
-  elif re.compile(r'layers\..*\.attn\.(q|k|v|o)_proj').match(
-      src_key
-  ):
-    if math.prod(tgt_shape) == math.prod(val.shape):
-      logging.debug(
-          'Reshaping attention proj on %s: %s -> %s',
-          src_key,
-          val.shape,
-          tgt_shape,
-      ) 
-      return jnp.reshape(val, tgt_shape)
-    else:
-      # Head dimension padding happens when it's less than 128.
-      assert len(val.shape) == 3, f'Unexpected attention proj shape: {val.shape}'
-      assert len(tgt_shape) == 2, f'Unexpected target shape: {tgt_shape}'
-      padded_head_dim = (val.shape[-1] + 127) // 128 * 128 - val.shape[-1]
-      num_head_dim_padding = tgt_shape[-1] // (val.shape[1] * padded_head_dim)
-
-      logging.debug('Attention proj shape mismatch on %s, but we attempt to align each dim later.', src_key)
-      print(f"val.shape: {val.shape}, tgt_shape: {tgt_shape}")
-      print("Attempting to align each dimension later on key:", src_key)
-      return jnp.reshape(val, tgt_shape[:-1] + (val.shape[-1] * num_head_dim_padding,))
-  raise ShapeMismatchError(
-      f'Rank mismatch for {src_key}: {val.shape} vs {tgt_shape}'
-  )
-
-
 def _align_shape(
     val: jnp.ndarray, tgt_shape: Tuple[int, ...], src_key: str
 ) -> jnp.ndarray:
@@ -627,19 +573,15 @@ def _align_shape(
           # for output proj, head dim is dim(-2)
           padded_dim = (val.shape[-2] + 127) // 128 * 128
           repeated_dim = tgt_shape[-1] // padded_dim
-          print(f"val.shape: {val.shape}, tgt_shape: {tgt_shape}")
-          print("Attempting to align each dimension later on key:", src_key)
           new_tgt_shape = tgt_shape[:-2] + (padded_dim, repeated_dim)
           # val.shape: [1536, 128, 2] vs tgt_shape:[1536, 128, 4]
         else:
           # for q/k/v proj, head dim is dim(-1)
           padded_dim = (val.shape[-1] + 127) // 128 * 128
           repeated_dim = tgt_shape[-1] // padded_dim
-          print(f"val.shape: {val.shape}, tgt_shape: {tgt_shape}")
-          print("Attempting to align each dimension later on key:", src_key)
           new_tgt_shape = tgt_shape[:-1] + (repeated_dim, padded_dim)
-        # val.shape: [1536, 2, 128] vs tgt_shape:[1536, 4, 128]
-          print("new_tgt_shape:", new_tgt_shape)
+    else:
+      raise ShapeMismatchError(f'Rank mismatch for {src_key}: {val.shape} vs {tgt_shape}')
     # return _reshape_attention(val, tgt_shape, src_key)
 
   attention_patterns = [
@@ -691,7 +633,6 @@ def _align_shape(
       original_shape,
       tgt_shape,
   )
-  print('Resolved shape mismatch on %s: %s -> %s' % (src_key, original_shape, tgt_shape))
 
   for axis, repeat_factor in repeat_ops:
     val = jnp.repeat(val, repeat_factor, axis=axis)
@@ -700,7 +641,6 @@ def _align_shape(
   if additional_reshape:
     assert math.prod(val.shape) == math.prod(tgt_shape), f'After align, shape mismatch on {src_key}: {val.shape} vs {tgt_shape}'
     val = jnp.reshape(val, tgt_shape)
-    print(f"After additional reshape, original shape: {original_shape}, val.shape: {val.shape}, tgt_shape: {tgt_shape}")
   return val
 
 
@@ -766,11 +706,9 @@ def transfer_state_with_mappings(
 
   # Build source-to-target mapping
   src_to_tgt_map = build_flat_dict(tgt_flat_list, key_mappings)
-  # print("src_to_tgt_map:", src_to_tgt_map)
 
   # Unroll scanned layers and flatten source state
   unscanned_src_to_tgt_flat = _unroll_scanned_layers(src_state, src_to_tgt_map)
-  # print("unscanned_src_to_tgt_flat:", unscanned_src_to_tgt_flat)
 
   # Transfer values with transformations
   for (flat_src_key, tgt_key), (
