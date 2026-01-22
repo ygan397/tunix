@@ -548,16 +548,28 @@ def _reshape_attention(
     return jnp.reshape(val, new_shape)
   # Handle cases like tgt_shape (4096, 1024) and val shape (4096, 8, 128),
   # which require reshaping.
-  if re.compile(r'layers\..*\.attn\.(q|k|v|o)_proj').match(
+  elif re.compile(r'layers\..*\.attn\.(q|k|v|o)_proj').match(
       src_key
-  ) and math.prod(tgt_shape) == math.prod(val.shape):
-    logging.debug(
-        'Reshaping attention proj on %s: %s -> %s',
-        src_key,
-        val.shape,
-        tgt_shape,
-    )
-    return jnp.reshape(val, tgt_shape)
+  ):
+    if math.prod(tgt_shape) == math.prod(val.shape):
+      logging.debug(
+          'Reshaping attention proj on %s: %s -> %s',
+          src_key,
+          val.shape,
+          tgt_shape,
+      ) 
+      return jnp.reshape(val, tgt_shape)
+    else:
+      # Head dimension padding happens when it's less than 128.
+      assert len(val.shape) == 3, f'Unexpected attention proj shape: {val.shape}'
+      assert len(tgt_shape) == 2, f'Unexpected target shape: {tgt_shape}'
+      padded_head_dim = (val.shape[-1] + 127) // 128 * 128 - val.shape[-1]
+      num_head_dim_padding = tgt_shape[-1] // (val.shape[1] * padded_head_dim)
+
+      logging.debug('Attention proj shape mismatch on %s, but we attempt to align each dim later.', src_key)
+      print(f"val.shape: {val.shape}, tgt_shape: {tgt_shape}")
+      print("Attempting to align each dimension later on key:", src_key)
+      return jnp.reshape(val, tgt_shape[:-1] + (val.shape[-1] * num_head_dim_padding,))
   raise ShapeMismatchError(
       f'Rank mismatch for {src_key}: {val.shape} vs {tgt_shape}'
   )
@@ -582,31 +594,73 @@ def _align_shape(
   if val.shape == tgt_shape:
     return val
 
+  additional_reshape = False
+  new_tgt_shape = tgt_shape
   # Handle rank mismatch
   if len(val.shape) != len(tgt_shape):
-    return _reshape_attention(val, tgt_shape, src_key)
+    if re.compile(r'layers\..*\.attn\.(q|k|v)_bias').match(src_key):
+      new_shape = (tgt_shape[0], val.shape[0] // tgt_shape[0])
+      logging.debug(
+          'Reshaping attention bias on %s: %s -> %s',
+          src_key,
+          val.shape,
+          new_shape,
+      )
+      return jnp.reshape(val, new_shape)
+    if re.compile(r'layers\..*\.attn\.(q|k|v|o)_proj').match(
+      src_key
+    ):
+      if math.prod(tgt_shape) == math.prod(val.shape):
+        logging.debug(
+            'Reshaping attention proj on %s: %s -> %s',
+            src_key,
+            val.shape,
+            tgt_shape,
+        ) 
+        return jnp.reshape(val, tgt_shape)
+      else:
+        # need to reshape and then align each dim
+        # Head dimension padding happens when it's less than 128.
+        additional_reshape = True
+        assert len(val.shape) == 3 and len(tgt_shape) == 2, f'Unexpected attention proj shape: {val.shape} and target shape: {tgt_shape}'
+        if 'o_proj' in src_key:
+          # for output proj, head dim is dim(-2)
+          padded_dim = (val.shape[-2] + 127) // 128 * 128
+          repeated_dim = tgt_shape[-1] // padded_dim
+          print(f"val.shape: {val.shape}, tgt_shape: {tgt_shape}")
+          print("Attempting to align each dimension later on key:", src_key)
+          new_tgt_shape = tgt_shape[:-2] + (padded_dim, repeated_dim)
+          # val.shape: [1536, 128, 2] vs tgt_shape:[1536, 128, 4]
+        else:
+          # for q/k/v proj, head dim is dim(-1)
+          padded_dim = (val.shape[-1] + 127) // 128 * 128
+          repeated_dim = tgt_shape[-1] // padded_dim
+          print(f"val.shape: {val.shape}, tgt_shape: {tgt_shape}")
+          print("Attempting to align each dimension later on key:", src_key)
+          new_tgt_shape = tgt_shape[:-1] + (repeated_dim, padded_dim)
+        # val.shape: [1536, 2, 128] vs tgt_shape:[1536, 4, 128]
+          print("new_tgt_shape:", new_tgt_shape)
+    # return _reshape_attention(val, tgt_shape, src_key)
 
-  original_shape = val.shape
-  # Check if this is an attention weight that can be padded/repeated
-<<<<<<< HEAD
   attention_patterns = [
       r'.*(q|k|v|o)_proj.*',
       r'.*(q|k|v|o)_bias.*',
       r'.*(key|query|value|output).*',
   ]
-=======
-  attention_patterns = [r'.*(q|k|v|o)_proj.*',r'.*(q|k|v|o)_bias.*', r'.*(key|query|value|output).*']
->>>>>>> 13ec32a (hit OOM on train_step)
+
   if not any(re.match(pattern, src_key) for pattern in attention_patterns):
     raise ShapeMismatchError(
         f'Shape mismatch for non-attention weight {src_key}: '
         f'{val.shape} vs {tgt_shape}. Padding/repetition only supported '
         'for attention weights.'
     )
+
+  original_shape = val.shape
+  # Check if this is an attention weight that can be padded/repeated
   # Align each dimension
   pad_width = []
   repeat_ops = []
-  for i, (src_dim, tgt_dim) in enumerate(zip(val.shape, tgt_shape)):
+  for i, (src_dim, tgt_dim) in enumerate(zip(val.shape, new_tgt_shape)):
     if src_dim < tgt_dim:
       # For QKV, H is dim(-1); For O, H is dim(-2), same for Tunix and vLLM
       if i == len(val.shape) - 1 or (
@@ -637,10 +691,17 @@ def _align_shape(
       original_shape,
       tgt_shape,
   )
+  print('Resolved shape mismatch on %s: %s -> %s' % (src_key, original_shape, tgt_shape))
 
   for axis, repeat_factor in repeat_ops:
     val = jnp.repeat(val, repeat_factor, axis=axis)
-  return jnp.pad(val, pad_width)
+  val = jnp.pad(val, pad_width)
+  # val [1536, 4, 128]
+  if additional_reshape:
+    assert math.prod(val.shape) == math.prod(tgt_shape), f'After align, shape mismatch on {src_key}: {val.shape} vs {tgt_shape}'
+    val = jnp.reshape(val, tgt_shape)
+    print(f"After additional reshape, original shape: {original_shape}, val.shape: {val.shape}, tgt_shape: {tgt_shape}")
+  return val
 
 
 def _apply_dtype_cast(
@@ -689,15 +750,7 @@ def transfer_state_with_mappings(
     # print("key_mapping_hook_fns:", key_mapping_hook_fns.keys())
   # Get flat target state
   tgt_flat_list = dst_state.flat_state()
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
-  print("tgt_flat_list:", tgt_flat_list)
->>>>>>> 13ec32a (hit OOM on train_step)
-=======
-  # print("tgt_flat_list:", tgt_flat_list)
->>>>>>> ca19be5 (hang repro)
   # Build sharding dictionary if resharding is needed
   sharding_dict = None
 
