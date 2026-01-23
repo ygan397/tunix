@@ -3,8 +3,6 @@
 # [WIP] Reproduction of [Deepscaler](https://pretty-radio-b75.notion.site/DeepScaleR-Surpassing-O1-Preview-with-a-1-5B-Model-by-Scaling-RL-19681902c1468005bed8ca303013a4e2) with Single-turn Agentic framework.
 
 import contextlib
-import functools
-import json
 import os
 
 from flax import nnx
@@ -13,7 +11,6 @@ import jax
 from jax import numpy as jnp
 import optax
 import qwix
-from tqdm.auto import tqdm
 
 import optax
 from orbax import checkpoint as ocp
