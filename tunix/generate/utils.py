@@ -573,8 +573,7 @@ def _align_shape(
           # for output proj, head dim is dim(-2)
           padded_dim = (val.shape[-2] + 127) // 128 * 128
           repeated_dim = tgt_shape[-1] // padded_dim
-          new_tgt_shape = tgt_shape[:-2] + (padded_dim, repeated_dim)
-          # val.shape: [1536, 128, 2] vs tgt_shape:[1536, 128, 4]
+          new_tgt_shape = tgt_shape[:-1] + (padded_dim, repeated_dim)
         else:
           # for q/k/v proj, head dim is dim(-1)
           padded_dim = (val.shape[-1] + 127) // 128 * 128
@@ -602,10 +601,11 @@ def _align_shape(
   # Align each dimension
   pad_width = []
   repeat_ops = []
+  print(f'Aligning shape for {src_key}: {val.shape} -> {tgt_shape} (intermediate: {new_tgt_shape})')
   for i, (src_dim, tgt_dim) in enumerate(zip(val.shape, new_tgt_shape)):
     if src_dim < tgt_dim:
       # For QKV, H is dim(-1); For O, H is dim(-2), same for Tunix and vLLM
-      if i == len(val.shape) - 1 or (
+      if ('o_proj' not in src_key and i == len(val.shape) - 1) or (
           'o_proj' in src_key and i == len(val.shape) - 2
       ):
         # Head dimension: pad with zeros
@@ -633,6 +633,7 @@ def _align_shape(
       original_shape,
       tgt_shape,
   )
+  print(f'Applying repeat and pad on {src_key}: repeat_ops={repeat_ops}, pad_width={pad_width}')
 
   for axis, repeat_factor in repeat_ops:
     val = jnp.repeat(val, repeat_factor, axis=axis)
