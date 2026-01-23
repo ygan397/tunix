@@ -133,6 +133,7 @@ class ConversationAgentBase(LLMBaseAgent):
     self._trajectory = agent_types.Trajectory()
     self._messages: list[dict[str, Any]] = []
     self._init_messages(system_prompt)
+    self.step = 0
 
   # ---------- Internal helpers ----------
 
@@ -203,3 +204,4 @@ class ConversationAgentBase(LLMBaseAgent):
     """Reset trajectory, cache, and conversation history."""
     self._trajectory = agent_types.Trajectory()
     self._init_messages(self.system_prompt)
+    self.step = 0

@@ -252,6 +252,7 @@ class TrajectoryCollectEngine:
     obs, _ = await asyncio.get_event_loop().run_in_executor(
         None, self.env.reset
     )
+    print(f"inital obs: {obs}")
     self.agent.reset()
     self.agent.update_from_env(observation=obs, reward=0.0, done=False, info={})
 
@@ -297,6 +298,7 @@ class TrajectoryCollectEngine:
     obs, rew, done, info = await asyncio.get_event_loop().run_in_executor(
         None, self.env.step, action
     )
+    info["max_steps"] = self.max_steps
     self.agent.update_from_env(obs, rew, done, info)
 
     if self.tokenizer is not None and self.chat_parser is not None:
