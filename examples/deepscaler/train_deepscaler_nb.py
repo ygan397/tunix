@@ -461,8 +461,10 @@ cluster_config = rl_cluster_lib.ClusterConfig(
         rollout_sglang_jax_init_with_random_weights=True,
         rollout_sglang_jax_disable_radix_cache=True,
         rollout_sglang_jax_enable_deterministic_sampling=False,
-        rollout_sglang_jax_precompile_bs_paddings=[1, 2],
-        rollout_sglang_jax_precompile_token_paddings=[2048, 4096, 8192],
+        # rollout_sglang_jax_precompile_bs_paddings=[1, 2],
+        # rollout_sglang_jax_precompile_token_paddings=[2048, 4096, 8192],
+        rollout_sglang_jax_precompile_bs_paddings=[8],
+        rollout_sglang_jax_precompile_token_paddings=[512],
         rollout_sglang_jax_chunked_prefill_size=2048,
         rollout_sglang_jax_page_size=64,
         # vllm-tpu specific configs
