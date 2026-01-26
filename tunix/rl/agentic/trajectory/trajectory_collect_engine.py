@@ -283,7 +283,7 @@ class TrajectoryCollectEngine:
     resp = await asyncio.get_event_loop().run_in_executor(
         None,
         self.model_call,
-        [self.agent.chat_completions],
+        self.agent.chat_completions,
         self.env,
         **self.model_call_kwargs,
     )

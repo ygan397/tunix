@@ -13,7 +13,7 @@ except ImportError:
     RepoEnv = None
     Action = None
 
-from tunix.rl.agentic.environments.base_environment import BaseEnv
+from tunix.rl.agentic.environments.base_environment import BaseTaskEnv, EnvStepResult
 
 R2EGYM_PATH = os.path.dirname(r2egym.__file__)
 # List of tools to be used in the environment.
@@ -31,7 +31,7 @@ SWEAGENT_COMMAND_FILES = [
 ]
 
 
-class SWEEnv(BaseEnv):
+class SWEEnv(BaseTaskEnv):
     """Software Engineering Environment for code-related tasks."""
 
     def __init__(
@@ -62,14 +62,9 @@ class SWEEnv(BaseEnv):
         self.verbose = verbose
         self.scaffold = scaffold
         assert scaffold in ["r2egym", "sweagent"], f"Invalid scaffold: {scaffold}, must be one of ['r2egym', 'sweagent']"
-
-    def reset(self) -> tuple[str, dict]:
-        """Reset the environment to initial state.
-
-        Returns:
-            Tuple containing task instruction and additional info including ground truth patch.
-        """
-        # Reset environment and docker runtime.
+        super().__init__()
+        
+    def _initial_observation(self) -> Any:
         if not self.env:
             # Initialize environment if not created yet.
             env_args = EnvArgs(ds=self.entry)
@@ -84,36 +79,24 @@ class SWEEnv(BaseEnv):
         self.total_steps = 0
 
         # Polls docker runtime to get task instruction.
-        return (
-            self.env.get_task_instruction(),
-            {}
-        )
+        return self.env.get_task_instruction()
 
-    def compute_final_reward(self):
-        return self.env.compute_reward()
-
-    def step(self, action: str | Action) -> tuple[Any, float, bool, dict[str, Any]]:
-        """Take a step in the environment.
-
-        Args:
-            action: Action string to execute in the environment
-
-        Returns:
-            Tuple of (observation, reward, done, info)
-        """
+    def _step_impl(self, action: Any) -> EnvStepResult:
         if isinstance(action, str):
             action_obj: Action = Action.from_string(action)
         else:
             action_obj = action
 
         if not action_obj.function_name:
-            return "", 0, False, {}
+            print("didn't find any funciton to call")
+            return EnvStepResult(observation="", reward=0, done=False, info={})
 
         # RepoEnv always returns 0 reward, must be evaluated by DockerRuntime.
         obs, reward, done, info = self.env.step(action_obj)
 
         self.total_steps += 1
-        return str(obs), reward, done, info
+        return EnvStepResult(observation=str(obs), reward=reward, done=done, info=info)
+
 
     def close(self) -> None:
         """Close the environment and clean up resources."""
