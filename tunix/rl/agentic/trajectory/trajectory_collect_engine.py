@@ -120,7 +120,7 @@ class TrajectoryCollectEngine:
         Trajectory | dict | list: Depending on mode.
     """
     await self._reset()
-    for _ in range(self.max_steps):
+    for i in range(self.max_steps):
       done = await self._one_step()
       if done:
         break
@@ -252,7 +252,6 @@ class TrajectoryCollectEngine:
     obs, _ = await asyncio.get_event_loop().run_in_executor(
         None, self.env.reset
     )
-    print(f"inital obs: {obs}")
     self.agent.reset()
     self.agent.update_from_env(observation=obs, reward=0.0, done=False, info={})
 
@@ -335,6 +334,7 @@ class TrajectoryCollectEngine:
           cur_step.env_masks = env_masks
 
     if time.time() - self._start_ts > self.timeout:
+      logging.warning("Episode timed out.")
       self.agent.get_current_state().done = True
       return True
     return done

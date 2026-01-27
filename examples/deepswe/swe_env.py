@@ -43,6 +43,7 @@ class SWEEnv(BaseTaskEnv):
         delete_image: bool = False,
         verbose: bool = False,
         scaffold: str = "r2egym",
+        max_steps: int = 1,
     ):
         """Initialize the SWE environment.
 
@@ -62,14 +63,13 @@ class SWEEnv(BaseTaskEnv):
         self.verbose = verbose
         self.scaffold = scaffold
         assert scaffold in ["r2egym", "sweagent"], f"Invalid scaffold: {scaffold}, must be one of ['r2egym', 'sweagent']"
-        super().__init__()
+        super().__init__(max_steps=max_steps)
         
     def _initial_observation(self) -> Any:
         if not self.env:
             # Initialize environment if not created yet.
             env_args = EnvArgs(ds=self.entry)
             self.env = RepoEnv(env_args, backend=self.backend, step_timeout=self.step_timeout, reward_timeout=self.reward_timeout, verbose=self.verbose)
-            print("created env")
         else:
             self.env.reset()
         if self.scaffold == "r2egym":
@@ -92,6 +92,7 @@ class SWEEnv(BaseTaskEnv):
             return EnvStepResult(observation="", reward=0, done=False, info={})
 
         # RepoEnv always returns 0 reward, must be evaluated by DockerRuntime.
+        print("calling r2e env")
         obs, reward, done, info = self.env.step(action_obj)
 
         self.total_steps += 1

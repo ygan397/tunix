@@ -72,38 +72,10 @@ class SWEAgent(ConversationAgentBase):
             self.user_prompt_template = SWEAGENT_USER_PROMPT
         super().__init__(system_prompt)
 
-    def process_model_response(self, response: str) -> tuple[str, str]:
-        """
-        Processes the model's response to extract thought and action components.
-
-        Parses the response using either function calling or XML parsing based on agent configuration.
-
-        Args:
-            response (str): The raw text response from the model.
-
-        Returns:
-            Tuple[str, str]: A tuple containing:
-                - The action string in XML format
-                - The processed response (may be reformatted if self.format_model_response is True)
-        """
-        if self.use_fn_calling:
-            thought, action = parse_oai_response(response)
-        else:
-            thought, action = parse_xml_response(response)
-
-        action_str = action.to_xml_string()
-        if self.format_model_response:
-            response = f"{thought}\n\n{action_str}"
-        return action.to_xml_string(), {
-            "thought": thought,
-        }
-
     def update_from_env(self, observation, reward, done, info):
-        # If the first step in environment, we need to update the state from the environment
-        if self._trajectory.steps:
-            observation = str(observation)
-        else:
-            observation = str(observation)
+        observation = str(observation)
+        # If it's the first step in environment, let's apply user prompt template
+        if len(self._trajectory.steps) == 0:
             observation = self.user_prompt_template.format(problem_statement=observation)
 
         max_steps = info.get("max_steps", None)
@@ -113,7 +85,6 @@ class SWEAgent(ConversationAgentBase):
                 observation += f"\nSteps Remaining: {remaining_steps}"
             else:
                 observation += "\nYou have reached the maximum number of steps. Please submit your answer NOW."
-
         cur_tokens = info.get("cur_tokens", None)
         if cur_tokens is not None and cur_tokens >= TOKEN_WARNING_THRESHOLD:
             observation += "\nYou are running out of tokens. Please submit your answer NOW."
@@ -147,7 +118,6 @@ class SWEAgent(ConversationAgentBase):
         else:
             thought, action = parse_xml_response(response)
         action_str = action.to_xml_string()
-        assert self._trajectory.steps, "Trajectory should not be empty when update_from_model is called."
 
         # Update Trajectory
         cur_step = self._trajectory.steps[-1]
