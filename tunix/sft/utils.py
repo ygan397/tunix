@@ -102,6 +102,10 @@ def _pathways_hbm_usage_gb(devices: Any) -> List[Tuple[float, Optional[float]]]:
   hbm_used = collections.defaultdict(int)
   # TODO(lancewang): Find a way to get the accurate hbm limit on Pathways.
   hbm_limit = None
+  # Track unique buffers to avoid double-counting when multiple Python
+  # variables reference the same underlying JAX array (e.g., a = jnp.ones(10);
+  # b = a)
+  seen_buffers = set()
   for array in live_arrays:
     assert hasattr(array, "sharding") and hasattr(
         array.sharding, "device_set"
@@ -109,10 +113,11 @@ def _pathways_hbm_usage_gb(devices: Any) -> List[Tuple[float, Optional[float]]]:
         "This function must not be called within jax tracer (e.g. jit, vmap,"
         " grad)"
     )
-    for device in array.sharding.device_set:
-      hbm_used[device] += (
-          array.dtype.itemsize * array.size // len(array.sharding.device_set)
-      )
+    for buffer in array.addressable_shards:
+      buffer_id = id(buffer.data)
+      if buffer_id not in seen_buffers:
+        seen_buffers.add(buffer_id)
+        hbm_used[buffer.data.device] += buffer.data.nbytes
   return [(hbm_used[device], hbm_limit) for device in devices]
 
 
